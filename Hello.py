@@ -17,35 +17,100 @@ from streamlit.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
-
 def run():
     st.set_page_config(
-        page_title="Hello",
-        page_icon="👋",
+        page_title="Lume Cannabis plot",
+        page_icon="Lume",
     )
+st.write("# Lume Cannabis Co. Marketshare Visualization")
 
-    st.write("# Welcome to Streamlit! 👋")
+import pandas as pd
+from sklearn.neighbors import BallTree
+import numpy as np
+import utm
+import geopandas as gpd
+import shapely
+import json
+import streamlit as st
 
-    st.sidebar.success("Select a demo above.")
+df=pd.read_excel("CannabisDisposMich.xlsx", skiprows=[1])
+df=df[["NAME","ADDRESS"]]
 
-    st.markdown(
-        """
-        Streamlit is an open-source app framework built specifically for
-        Machine Learning and Data Science projects.
-        **👈 Select a demo from the sidebar** to see some examples
-        of what Streamlit can do!
-        ### Want to learn more?
-        - Check out [streamlit.io](https://streamlit.io)
-        - Jump into our [documentation](https://docs.streamlit.io)
-        - Ask a question in our [community
-          forums](https://discuss.streamlit.io)
-        ### See more complex demos
-        - Use a neural net to [analyze the Udacity Self-driving Car Image
-          Dataset](https://github.com/streamlit/demo-self-driving)
-        - Explore a [New York City rideshare dataset](https://github.com/streamlit/demo-uber-nyc-pickups)
-    """
-    )
+df_ify=pd.read_csv("4022d538b72f43d0acc2735f026273c9.csv")
+df_ify=df_ify[["query.text", "lon", "lat"]]
+df_ify["Name"]=df["NAME"]
+
+df2=df_ify["Name"]=="Lume Cannabis Co."
+lume_plots=df_ify[df2]
+lume_plots=lume_plots.reset_index()
+lume_plots.loc[len(lume_plots)] = [337,'2247 W Liberty St Ste 1, Ann Arbor, MI 48103', -83.77763, 42.27394, "Lume Cannabis Co."]
+
+df2=df_ify["Name"]!="Lume Cannabis Co."
+nonlume_plots=df_ify[df2]
 
 
-if __name__ == "__main__":
-    run()
+def circles(lonlat, radius=10 ** 4):
+    
+    utm_coords = utm.from_latlon(lonlat[:, 1], lonlat[:, 0])
+    utmcrs = gpd.GeoDataFrame(
+        geometry=[shapely.geometry.Point(lonlat[0, 0], lonlat[0, 1])], crs="EPSG:4326"
+    ).estimate_utm_crs()
+
+    return gpd.GeoDataFrame(
+        geometry=[
+            shapely.geometry.Point(easting, northing).buffer(radius)
+            for easting, northing in zip(utm_coords[0], utm_coords[1])
+        ],
+        crs=utmcrs,
+    ).to_crs("EPSG:4326")
+
+gdf = circles(lume_plots.loc[:, ["lon", "lat"]].values, radius=16093.4)
+
+import plotly.express as px
+color_scale = [(0, 'orange'), (1,'red')]
+fig = px.scatter_mapbox(lume_plots, 
+                        lat="lat", 
+                        lon="lon", 
+                        hover_name="Name", 
+                        hover_data=["query.text"],
+                        zoom=6, 
+                        height=800,
+                        width=800)
+
+fig.update_traces(marker={'size': 8, 'color': 'darkblue'})
+
+fig.update_layout(
+    mapbox={
+        "style": "open-street-map",
+        "zoom": 6,
+        "center":{"lat":gdf.loc[0,"geometry"].centroid.y, "lon":gdf.loc[0,"geometry"].centroid.x},
+        "layers": [
+            {
+                "source": json.loads(gdf.geometry.to_json()),
+                "below": "traces",
+                "type": "line",
+                "color": "darkblue",
+                "line": {"width": 1.5},
+            }
+        ],
+    },
+    margin={"l": 0, "r": 0, "t": 0, "b": 0},
+)
+
+fig2 = px.scatter_mapbox(nonlume_plots, 
+                        lat="lat", 
+                        lon="lon", 
+                        hover_name="Name", 
+                        hover_data=["query.text"],
+                        zoom=6, 
+                        height=800,
+                        width=800)
+
+fig2.update_traces(marker={'size': 8, 'color': 'saddlebrown'})
+
+fig.add_trace(fig2.data[0])
+fig.update_layout(mapbox_style="open-street-map")
+fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+st.plotly_chart(fig)
+
+
